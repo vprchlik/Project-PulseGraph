@@ -53,15 +53,16 @@ class AppState:
                 name = row.get("repo_name", "")
                 self.repo_metadata[name] = row.to_dict()
 
+        # Try to import Chronos; model weights are loaded lazily on first forecast call.
+        # This keeps startup fast and avoids blocking on HuggingFace at boot time.
         try:
-            from pulsegraph.forecast.chronos_forecaster import ChronosForecaster
+            from pulsegraph.forecast.chronos_forecaster import ChronosForecaster  # noqa: F401
 
             self.forecaster = ChronosForecaster()
-            _ = self.forecaster.pipeline
             self.model_loaded = True
-            logger.info("Chronos-2 model loaded")
+            logger.info("Chronos-2 forecaster initialized (weights loaded on first use)")
         except Exception as e:
-            logger.warning("Failed to load Chronos-2: %s. Using ETS fallback.", e)
+            logger.warning("Chronos-2 not available: %s. Using ETS fallback.", e)
             from pulsegraph.forecast.baselines import ETSForecaster
 
             self.forecaster = ETSForecaster(n_samples=settings.trajectory_samples)
@@ -87,7 +88,18 @@ class AppState:
 
         from pulsegraph.regime.sampler import analyze_regimes
 
-        forecast = self.forecaster.forecast(series, horizon=horizon, repo_name=repo_name)
+        try:
+            forecast = self.forecaster.forecast(series, horizon=horizon, repo_name=repo_name)
+        except Exception as e:
+            # Chronos weights unavailable (no internet / no GPU): fall back to ETS
+            logger.warning("Chronos forecast failed (%s); falling back to ETS", e)
+            from pulsegraph.forecast.baselines import ETSForecaster
+
+            fallback = ETSForecaster(n_samples=settings.trajectory_samples)
+            self.forecaster = fallback
+            self.model_loaded = False
+            forecast = fallback.forecast(series, horizon=horizon, repo_name=repo_name)
+
         regime = analyze_regimes(forecast)
 
         result = {

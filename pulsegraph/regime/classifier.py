@@ -85,20 +85,25 @@ def classify_trajectory(trajectory: np.ndarray) -> Regime:
     """Classify a single trajectory into a regime using shape features."""
     features = compute_shape_features(trajectory)
 
-    scale = max(abs(features.total_change), np.std(trajectory), 1e-6)
-    norm_slope = features.slope * features.length / scale
-    norm_curvature = features.curvature * features.length**2 / scale
+    # Normalize by mean level so that a flat signal at any absolute scale
+    # produces a near-zero norm_slope regardless of residual noise magnitude.
+    mean_level = max(abs(float(np.mean(trajectory))), float(np.std(trajectory)), 1e-6)
+    norm_slope = features.slope * features.length / mean_level
+    norm_curvature = features.curvature * features.length**2 / mean_level
 
-    if features.spike_ratio > 0.6 and features.max_position < 0.4:
+    # Spike-and-fade: large spike early in the series, with the peak strictly
+    # after the first sample (max_position > 0 excludes pure monotonic decays
+    # where the max is at position 0).
+    if features.spike_ratio > 0.6 and 0 < features.max_position < 0.4:
         return Regime.SPIKE_AND_FADE
 
     if norm_curvature > 0.3 and norm_slope > 0.2:
         return Regime.BREAKOUT
 
-    if norm_slope > 0.1:
+    if norm_slope > 0.3:
         return Regime.STEADY_GROWTH
 
-    if norm_slope < -0.1:
+    if norm_slope < -0.3:
         return Regime.DECAY
 
     return Regime.PLATEAU
