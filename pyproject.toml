@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pulsegraph"
 version = "0.1.0"
-description = "A measurement-first future search engine for public entities"
+description = "Empirical study: do Chronos-2 and TimesFM-2.5 beat simple baselines at forecasting daily GitHub new-star counts?"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}

@@ -125,6 +125,79 @@ class GitHubAPIClient:
                 logger.warning("Failed to fetch %s: %s", full_name, e)
         return pd.DataFrame(records)
 
+    def search_repositories(
+        self,
+        query: str,
+        sort: str = "stars",
+        order: str = "desc",
+        max_results: int = 100,
+    ) -> list[dict]:
+        """Search repositories. The Search API caps results at 1000 (10 pages)."""
+        results: list[dict] = []
+        page = 1
+        while len(results) < max_results and page <= 10:
+            resp = self.http.get(
+                "/search/repositories",
+                params={
+                    "q": query,
+                    "sort": sort,
+                    "order": order,
+                    "per_page": 100,
+                    "page": page,
+                },
+            )
+            self._handle_rate_limit(resp)
+            resp.raise_for_status()
+            items = resp.json().get("items", [])
+            if not items:
+                break
+            results.extend(items)
+            if len(items) < 100:
+                break
+            page += 1
+        return results[:max_results]
+
+    def get_stargazer_timestamps(
+        self, owner: str, repo: str, max_pages: int = 400
+    ) -> tuple[list[str], bool]:
+        """Fetch per-star ``starred_at`` timestamps via the stargazers endpoint.
+
+        Requires the ``application/vnd.github.star+json`` media type to receive
+        timestamps. The REST API hard-caps pagination at 400 pages (40,000
+        stargazers); for repos above that only the most recent 40k are
+        retrievable, so the reconstructed daily series will be truncated on the
+        left. Returns (timestamps, truncated).
+        """
+        timestamps: list[str] = []
+        truncated = False
+        page = 1
+        url = f"/repos/{owner}/{repo}/stargazers"
+        while page <= max_pages:
+            resp = self.http.get(
+                url,
+                params={"per_page": 100, "page": page},
+                headers={"Accept": "application/vnd.github.star+json"},
+            )
+            self._handle_rate_limit(resp)
+            if resp.status_code == 422:
+                # Exceeded the API's pagination window.
+                truncated = True
+                break
+            resp.raise_for_status()
+            data = resp.json()
+            if not data:
+                break
+            for entry in data:
+                ts = entry.get("starred_at")
+                if ts:
+                    timestamps.append(ts)
+            if len(data) < 100:
+                break
+            page += 1
+        if page > max_pages:
+            truncated = True
+        return timestamps, truncated
+
     def graphql_query(self, query: str, variables: dict | None = None) -> dict:
         """Execute a raw GraphQL query."""
         headers = {}

@@ -1,0 +1,35 @@
+{
+  "tag": "real_full6",
+  "n_repos": 179,
+  "usable_by_regime": {
+    "breakout": 41,
+    "steady": 69,
+    "dead": 69
+  },
+  "models": [
+    "chronos2",
+    "ets",
+    "lightgbm",
+    "linear",
+    "naive_seasonal",
+    "timesfm"
+  ],
+  "config": {
+    "horizons": [
+      7,
+      30,
+      90
+    ],
+    "step_days": 30,
+    "min_context_days": 180,
+    "max_windows": 8,
+    "n_samples": 200,
+    "min_history_days": 270
+  },
+  "artifact_construction": "experiment_real_full_results.parquet plus a separately executed TimesFM run on verified-identical window keys",
+  "metric_caveats": {
+    "timesfm_coverage_95": "unsupported: q0.1-q0.9 was historically clamped and mislabeled as a 95% interval; do not interpret this column",
+    "pit_values": "archived ordinary empirical PIT; invalid for tied discrete counts and not used in final claims",
+    "primary_baseline_sampling": "residual bootstrap draws were unseeded in this archived run; current code uses deterministic per-forecast seeds"
+  }
+}

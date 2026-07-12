@@ -31,28 +31,18 @@ mkdir -p data/raw data/processed data/cache reports
 # 4. Environment file
 if [ ! -f .env ]; then
     cp .env.example .env
-    echo "Created .env from .env.example -- edit it with your API keys"
-fi
-
-# 5. Frontend
-if [ -d frontend ]; then
-    echo "Installing frontend dependencies..."
-    cd frontend
-    npm install
-    cd ..
+    echo "Created .env from .env.example -- set GITHUB_TOKEN if collecting new data"
 fi
 
 echo ""
 echo "=== Setup Complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. Edit .env with your API keys (GITHUB_TOKEN, etc.)"
-echo "  2. Run the feasibility study:"
+echo "  1. Run tests:"
 echo "     source .venv/bin/activate"
-echo "     python scripts/phase0_feasibility.py --data-source synthetic --baselines-only"
-echo "  3. Run tests:"
-echo "     pytest tests/ -v"
-echo "  4. Start the API:"
-echo "     uvicorn pulsegraph.api.app:app --reload --port 8000"
-echo "  5. Start the frontend:"
-echo "     cd frontend && npm run dev"
+echo "     pytest tests/ -q"
+echo "  2. (Optional) Set GITHUB_TOKEN in .env, then ingest data:"
+echo "     python scripts/ingest_stars.py --per-regime 80"
+echo "  3. Run the primary experiment:"
+echo "     python scripts/run_experiment.py --include-chronos --tag real_full"
+echo "  4. See README.md and RESULTS.md for full reproduction and audit scripts."

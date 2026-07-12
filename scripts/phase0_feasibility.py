@@ -18,7 +18,8 @@ Usage:
     python scripts/phase0_feasibility.py --data-source synthetic
 
     # With a local parquet file:
-    python scripts/phase0_feasibility.py --data-source file --data-path data/raw/daily_signals.parquet
+    python scripts/phase0_feasibility.py --data-source file \
+        --data-path data/raw/daily_signals.parquet
 """
 
 from __future__ import annotations
@@ -39,7 +40,6 @@ from pulsegraph.data.loader import (
     build_dataset_for_forecasting,
     generate_synthetic_data,
     load_daily_signals,
-    prepare_star_series,
 )
 from pulsegraph.evaluation.backtest import (
     BacktestConfig,
@@ -278,7 +278,11 @@ def main():
         default="synthetic",
         help="Where to load data from",
     )
-    parser.add_argument("--data-path", default="", help="Path to data file (for --data-source=file)")
+    parser.add_argument(
+        "--data-path",
+        default="",
+        help="Path to data file (for --data-source=file)",
+    )
     parser.add_argument("--n-repos", type=int, default=100, help="Number of repos to generate/pull")
     parser.add_argument("--n-eval-repos", type=int, default=50, help="Repos to evaluate (subset)")
     parser.add_argument("--n-samples", type=int, default=200, help="Forecast trajectory samples")

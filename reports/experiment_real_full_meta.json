@@ -1,0 +1,27 @@
+{
+  "tag": "real_full",
+  "n_repos": 179,
+  "usable_by_regime": {
+    "breakout": 41,
+    "steady": 69,
+    "dead": 69
+  },
+  "models": [
+    "naive_seasonal",
+    "linear",
+    "ets",
+    "lightgbm",
+    "chronos2"
+  ],
+  "config": {
+    "horizons": [
+      7,
+      30,
+      90
+    ],
+    "step_days": 30,
+    "min_context_days": 180,
+    "max_windows": 8,
+    "n_samples": 200
+  }
+}

@@ -9,8 +9,8 @@ Implements four baselines from the evaluation protocol:
 
 from __future__ import annotations
 
+import hashlib
 import logging
-from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -20,6 +20,22 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from pulsegraph.forecast.chronos_forecaster import ForecastOutput
 
 logger = logging.getLogger(__name__)
+
+
+def _forecast_rng(
+    model_name: str,
+    repo_name: str,
+    horizon: int,
+    values: np.ndarray,
+) -> np.random.Generator:
+    """Build a stable per-forecast RNG for reproducible bootstrap samples."""
+    tail = np.asarray(values[-32:], dtype=np.float64)
+    payload = (
+        f"{model_name}|{repo_name}|{horizon}|{len(values)}|".encode()
+        + tail.tobytes()
+    )
+    seed = int.from_bytes(hashlib.sha256(payload).digest()[:8], "little")
+    return np.random.default_rng(seed)
 
 
 def _bootstrap_samples(
@@ -59,7 +75,12 @@ class NaiveSeasonalForecaster:
         residuals = np.diff(values[-min(90, len(values)):])
         if len(residuals) == 0:
             residuals = np.array([0.0])
-        samples = _bootstrap_samples(point, residuals, self.n_samples)
+        samples = _bootstrap_samples(
+            point,
+            residuals,
+            self.n_samples,
+            rng=_forecast_rng("naive_seasonal", repo_name, horizon, values),
+        )
 
         return ForecastOutput(
             repo_name=repo_name,
@@ -99,7 +120,12 @@ class LinearForecaster:
         point = np.maximum(0, point)
 
         residuals = tail - (slope * x + intercept)
-        samples = _bootstrap_samples(point, residuals, self.n_samples)
+        samples = _bootstrap_samples(
+            point,
+            residuals,
+            self.n_samples,
+            rng=_forecast_rng("linear", repo_name, horizon, values),
+        )
 
         return ForecastOutput(
             repo_name=repo_name,
@@ -150,7 +176,12 @@ class ETSForecaster:
             point = np.full(horizon, mean_val)
             residuals = values[-30:] - mean_val
 
-        samples = _bootstrap_samples(point, residuals, self.n_samples)
+        samples = _bootstrap_samples(
+            point,
+            residuals,
+            self.n_samples,
+            rng=_forecast_rng("ets", repo_name, horizon, values),
+        )
 
         return ForecastOutput(
             repo_name=repo_name,
@@ -236,7 +267,12 @@ class LightGBMForecaster:
             extended[idx] = max(0, pred)
 
         point = extended[len(values):]
-        samples = _bootstrap_samples(point, residuals, self.n_samples)
+        samples = _bootstrap_samples(
+            point,
+            residuals,
+            self.n_samples,
+            rng=_forecast_rng("lightgbm", repo_name, horizon, values),
+        )
 
         return ForecastOutput(
             repo_name=repo_name,
@@ -253,9 +289,120 @@ class LightGBMForecaster:
         )
 
 
+class LastValueForecaster:
+    """Random-walk baseline: repeat the most recent observation."""
+
+    def __init__(self, n_samples: int = 200):
+        self.n_samples = n_samples
+
+    def forecast(
+        self,
+        series: pd.Series | np.ndarray,
+        horizon: int = 30,
+        repo_name: str = "",
+    ) -> ForecastOutput:
+        values = np.asarray(series, dtype=np.float64)
+        point = np.full(horizon, values[-1])
+        tail = values[-min(91, len(values)) :]
+        residuals = np.diff(tail)
+        if len(residuals) == 0:
+            residuals = np.array([0.0])
+        samples = _bootstrap_samples(
+            point,
+            residuals,
+            self.n_samples,
+            rng=_forecast_rng("last_value", repo_name, horizon, values),
+        )
+        return _forecast_output(repo_name, horizon, samples, len(values), "last_value")
+
+
+class WeeklySeasonalNaiveForecaster:
+    """Fixed weekly seasonal naive: repeat the last seven observations."""
+
+    def __init__(self, n_samples: int = 200):
+        self.n_samples = n_samples
+
+    def forecast(
+        self,
+        series: pd.Series | np.ndarray,
+        horizon: int = 30,
+        repo_name: str = "",
+    ) -> ForecastOutput:
+        values = np.asarray(series, dtype=np.float64)
+        period = min(7, len(values))
+        point = np.resize(values[-period:], horizon)
+        if len(values) > period:
+            residuals = values[period:] - values[:-period]
+            residuals = residuals[-min(90, len(residuals)) :]
+        else:
+            residuals = np.array([0.0])
+        samples = _bootstrap_samples(
+            point,
+            residuals,
+            self.n_samples,
+            rng=_forecast_rng("weekly_naive", repo_name, horizon, values),
+        )
+        return _forecast_output(repo_name, horizon, samples, len(values), "weekly_naive")
+
+
+class LocalMeanForecaster:
+    """Robust local-level baseline using the recent 28-day mean."""
+
+    def __init__(self, lookback: int = 28, n_samples: int = 200):
+        self.lookback = lookback
+        self.n_samples = n_samples
+
+    def forecast(
+        self,
+        series: pd.Series | np.ndarray,
+        horizon: int = 30,
+        repo_name: str = "",
+    ) -> ForecastOutput:
+        values = np.asarray(series, dtype=np.float64)
+        tail = values[-min(self.lookback, len(values)) :]
+        level = float(np.mean(tail))
+        point = np.full(horizon, level)
+        residuals = tail - level
+        if len(residuals) == 0:
+            residuals = np.array([0.0])
+        samples = _bootstrap_samples(
+            point,
+            residuals,
+            self.n_samples,
+            rng=_forecast_rng("local_mean", repo_name, horizon, values),
+        )
+        return _forecast_output(repo_name, horizon, samples, len(values), "local_mean")
+
+
+def _forecast_output(
+    repo_name: str,
+    horizon: int,
+    samples: np.ndarray,
+    context_length: int,
+    model_name: str,
+) -> ForecastOutput:
+    """Construct a ForecastOutput shared by simple baseline implementations."""
+    return ForecastOutput(
+        repo_name=repo_name,
+        horizon=horizon,
+        samples=samples,
+        median=np.median(samples, axis=0),
+        mean=np.mean(samples, axis=0),
+        lower_80=np.percentile(samples, 10, axis=0),
+        upper_80=np.percentile(samples, 90, axis=0),
+        lower_95=np.percentile(samples, 2.5, axis=0),
+        upper_95=np.percentile(samples, 97.5, axis=0),
+        context_length=context_length,
+        model_name=model_name,
+    )
+
+
 BASELINE_FORECASTERS = {
     "naive_seasonal": NaiveSeasonalForecaster,
     "linear": LinearForecaster,
     "ets": ETSForecaster,
     "lightgbm": LightGBMForecaster,
+    "last_value": LastValueForecaster,
+    "weekly_naive": WeeklySeasonalNaiveForecaster,
+    "local_mean": LocalMeanForecaster,
 }

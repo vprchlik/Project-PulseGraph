@@ -59,6 +59,13 @@ def test_coverage_none_inside():
     assert coverage(lower, upper, actuals) == pytest.approx(0.0)
 
 
+def test_coverage_unsupported_interval_is_nan():
+    lower = np.array([np.nan, np.nan])
+    upper = np.array([np.nan, np.nan])
+    actuals = np.array([1.0, 2.0])
+    assert np.isnan(coverage(lower, upper, actuals))
+
+
 def test_pit_uniform_calibration():
     rng = np.random.default_rng(42)
     n_steps = 50
@@ -67,3 +74,12 @@ def test_pit_uniform_calibration():
     pit = pit_values(samples, actuals)
     assert pit.shape == (n_steps,)
     assert np.all(pit >= 0) and np.all(pit <= 1)
+
+
+def test_randomized_pit_handles_discrete_ties():
+    samples = np.zeros((100, 4))
+    actuals = np.zeros(4)
+    pit = pit_values(samples, actuals, rng=np.random.default_rng(42))
+    assert np.all(pit > 0)
+    assert np.all(pit < 1)
+    assert len(np.unique(pit)) == 4

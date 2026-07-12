@@ -6,7 +6,7 @@ Appends new data points to the existing parquet file.
 
 Usage:
     python scripts/daily_ingest.py
-    
+
 Crontab (run daily at 2 AM):
     0 2 * * * cd /path/to/PulseGraph && python scripts/daily_ingest.py
 """
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import pandas as pd

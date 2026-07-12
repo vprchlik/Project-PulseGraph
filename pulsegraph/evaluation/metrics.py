@@ -60,19 +60,38 @@ def coverage(
     actuals: np.ndarray,
 ) -> float:
     """Fraction of actuals falling within the prediction interval."""
-    inside = (actuals >= lower) & (actuals <= upper)
+    valid = np.isfinite(lower) & np.isfinite(upper) & np.isfinite(actuals)
+    if not np.any(valid):
+        return float("nan")
+    inside = (actuals[valid] >= lower[valid]) & (actuals[valid] <= upper[valid])
     return float(np.mean(inside))
 
 
-def pit_values(samples: np.ndarray, actuals: np.ndarray) -> np.ndarray:
-    """Compute Probability Integral Transform values.
+def pit_values(
+    samples: np.ndarray,
+    actuals: np.ndarray,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """Compute randomized empirical PIT values for discrete observations.
 
-    For well-calibrated forecasts, PIT values should be Uniform(0, 1).
+    GitHub star counts are discrete and forecasts often contain ties after
+    non-negative clipping. Ordinary ``F(y)`` PIT values are not uniform even
+    under a calibrated discrete forecast. We therefore randomize uniformly
+    over the probability mass at the observation:
+
+    ``F(y-) + U * (F(y) - F(y-))``.
+
+    The default seed makes metric recomputation deterministic. Inference over
+    aggregated PIT values must still account for repeated horizons/repos.
     """
+    if rng is None:
+        rng = np.random.default_rng(0)
     horizon = min(samples.shape[1], len(actuals))
     pit = np.zeros(horizon)
     for t in range(horizon):
-        pit[t] = np.mean(samples[:, t] <= actuals[t])
+        lower = np.mean(samples[:, t] < actuals[t])
+        upper = np.mean(samples[:, t] <= actuals[t])
+        pit[t] = lower + rng.random() * (upper - lower)
     return pit
 
 
@@ -123,4 +142,5 @@ def evaluate_forecast(
         "ks_statistic": ks_stat,
         "ks_pvalue": ks_p,
         "pit_values": pit_vals.tolist(),
+        "pit_method": "randomized_empirical",
     }
