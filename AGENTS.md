@@ -34,3 +34,7 @@ PulseGraph bundles two deliverables in one repo:
 - **Frontend → backend wiring:** `frontend/next.config.js` rewrites `/api/:path*` to `http://localhost:8000/:path*`, so the backend must run on port 8000 for the UI to work.
 - **PostgreSQL is unused at runtime.** `pulsegraph/data/schema.py`, `alembic/`, and `DATABASE_URL` exist but the API/scripts read/write parquet, not the DB. No database is required to run or test anything.
 - A `GITHUB_TOKEN` is only needed to ingest *fresh* real data (`scripts/ingest_stars.py`); it is not required for tests or for running the app on synthetic data.
+
+### Known pre-existing app bug (web app detail view)
+
+- The web app's entity **detail view** (`frontend/src/components/EntityDetail.tsx`) fires `/forecast`, `/explain`, and `/search/analog` together in one `Promise.all`, so if any one fails the whole detail page shows an error and no chart renders. With the current unpinned deps (numpy 2.x / pandas 3.x), `/explain` fails: `pulsegraph/explain/attribution.py` does `rolling_std[rolling_std < 1e-6] = 1.0` on `pd.Series(...).rolling().std().values`, which is a **read-only** array in pandas 3.x → `ValueError: assignment destination is read-only`. The `/health`, `/forecast`, `/search/regime`, and `/search/analog` endpoints work; only `/explain` (and therefore the combined detail view) is broken. This is an application bug, not an environment/setup issue.
